@@ -1,0 +1,52 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build available Docker images
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Find and build Dockerfiles
+        shell: bash
+        run: |
+          mapfile -t dockerfiles < <(
+            find . -type f -name 'Dockerfile' -not -path './.git/*' | sort
+          )
+
+          if [ "${#dockerfiles[@]}" -eq 0 ]; then
+            echo "::warning::No Dockerfile found. The workflow completed, but no Docker image was built."
+            echo "Add a Dockerfile to the repository root or to your frontend/backend folder to enable image builds."
+            exit 0
+          fi
+
+          for dockerfile in "${dockerfiles[@]}"; do
+            context="$(dirname "$dockerfile")"
+            if [ "$context" = "." ]; then
+              image_name="bis-sahayak"
+            else
+              image_name="$(basename "$context" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9-' '-')"
+              image_name="bis-sahayak-${image_name}"
+            fi
+
+            echo "Building ${image_name} from ${dockerfile} (context: ${context})"
+            docker build \
+              --file "$dockerfile" \
+              --tag "${image_name}:${GITHUB_SHA}" \
+              "$context"
+          done
